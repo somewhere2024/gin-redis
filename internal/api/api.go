@@ -4,6 +4,7 @@ import (
 	"gin-redis/internal/dao"
 	"gin-redis/internal/models"
 	"gin-redis/internal/service"
+	"gin-redis/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
@@ -39,6 +40,7 @@ func LoginUser(c *gin.Context) {
 		return
 	}
 	user := &models.User{}
+	// 用redis做缓存 (未实现)
 	result := dao.DB.Where("username = ?", username).First(user)
 	if result.Error != nil {
 		service.Logger.Info("用户名或密码错误")
@@ -67,7 +69,48 @@ func LoginUser(c *gin.Context) {
 }
 
 // 获取自己的信息
+// 并用redis做缓存机制
 func ReadMe(c *gin.Context) {
 	token := c.GetHeader("Authorization")
 	c.JSON(http.StatusOK, gin.H{"message": "获取成功", "access_token": token, "token_type": "Bearer"})
+	return
+}
+
+func RedisSet(c *gin.Context) {
+	key := c.PostForm("key")
+	value := c.PostForm("value")
+	if key == "" || value == "" {
+		service.Logger.Error("redis测试失败:key和value不能为空")
+		c.JSON(http.StatusBadRequest, gin.H{"message": "redis测试失败"})
+		return
+	}
+
+	err := utils.SetKeyValue(dao.RDB, key, value)
+	if err != nil {
+		service.Logger.Error("redis测试失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"message": "redis测试失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "redis测试成功"})
+}
+
+func RedisGet(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		service.Logger.Error("redis测试失败:key不能为空")
+		c.JSON(http.StatusBadRequest, gin.H{"message": "key不能为空"})
+		return
+	}
+	value, err := utils.GetKeyValue(dao.RDB, key)
+	if value == "" && err != nil {
+		service.Logger.Error("redis测试失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"message": "redis测试失败"})
+		return
+	} else if err != nil {
+		service.Logger.Error("redis测试失败", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"message": "redis测试失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "redis测试成功", "value": value})
 }
